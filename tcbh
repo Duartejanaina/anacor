@@ -1,0 +1,344 @@
+---
+title: "Faixa Etária x Transporte Coletivo - BH"
+author: "Janaína Duarte"
+date: "2023-01-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## INTRODUÇÃO
+
+Objetivo: Analisar se há um padrão de correspondência entre a faixa etária do usuário do transporte coletivo e sua avaliação da qualidade do sistema. 
+
+## FASE 1: PACOTES E DATASET
+
+### Carregando pacotes
+
+```{r}
+pacotes <- c("plotly", #plataforma gráfica
+             "tidyverse", #carregar outros pacotes do R
+             "ggrepel", #geoms de texto e rótulo para 'ggplot2' que ajudam a evitar sobreposição de textos
+             "knitr", "kableExtra", #formatação de tabelas
+             "sjPlot", #elaboração de tabelas de contingência
+             "FactoMineR", #função 'CA' para elaboração direta da Anacor
+             "amap", #funções 'matlogic' e 'burt' para matrizes binária e de Burt
+             "ade4") #função 'dudi.acm' para elaboração da ACM
+
+if(sum(as.numeric(!pacotes %in% installed.packages())) != 0){
+  instalador <- pacotes[!pacotes %in% installed.packages()]
+  for(i in 1:length(instalador)) {
+    install.packages(instalador, dependencies = T)
+    break()}
+  sapply(pacotes, require, character = T) 
+} else {
+  sapply(pacotes, require, character = T) 
+}
+```
+### Carregando o Dataset
+
+
+```{r}
+install.packages("")
+library(readr)
+Qualidade_baixa <- read_delim("Qualidade baixa.csv", 
+    delim = ";")
+```
+
+## FASE 2: ANÁLISE PRIMÁRIA DOS DADOS
+
+```{r}
+Qualidade_baixa %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE,
+                font_size = 20)
+summary(Qualidade_baixa)
+
+```
+
+### Tabela de contingência
+
+```{r}
+tabela_contingencia <- table(Qualidade_baixa$Faixa,
+                             Qualidade_baixa$Avalicao)
+tabela_contingencia
+```
+
+Observaçoes na tabela de contingência
+
+
+```{r}
+n <- sum(tabela_contingencia)
+n
+```
+
+### Teste Qui-quadrado, P-valor
+
+```{r}
+qui2 <- chisq.test(x = tabela_contingencia)
+qui2
+```
+
+Atenção! O p-valor foi de 0.2012. 
+Aceitamos a hipótese nula em que não há relação da avaliação com a qualidade.
+Entretanto, exploraremos mais a análise de correspondência.
+
+
+## Tabela de contingência com frequências absolutas observadas
+
+```{r}
+qui2$observed
+```
+
+## Tabela de contingência com frequências absolutas esperadas
+
+```{r}
+qui2$expected
+```
+
+
+## Resíduos – diferenças entre frequências absolutas observadas e esperadas
+```{r}
+qui2$observed - qui2$expected
+```
+
+## Valores de qui-quadrado por célula
+```{r}
+((qui2$observed - qui2$expected)^2)/qui2$expected
+```
+
+## Resíduos padronizados
+```{r}
+qui2$residuals
+
+```
+
+## Resíduos padronizados ajustados
+```{r}
+qui2$stdres
+
+```
+
+
+# Mapa de calor dos resíduos padronizados ajustados
+
+```{r}
+data.frame(qui2$stdres) %>%
+  rename(Faixa= 1,
+         Avalicao = 2) %>% 
+  ggplot(aes(x = fct_rev(Faixa), y = Avalicao,
+             fill = Freq, label = round(Freq, 3))) +
+  geom_tile() +
+  geom_text(size = 5) +
+  scale_fill_gradient2(low = "white", 
+                       mid = "white", 
+                       high = "purple",
+                       midpoint = 1.96) +
+  labs(x = 'Faixa Etária', y = 'Avaliação', fill = "Res. Pad. Ajustados") +
+  coord_flip() +
+  theme_bw()
+```
+
+## MAPA PERCEPTUAL
+
+Análise da associação por meio do mapa perceptual
+
+## Definição da matriz A
+```{r}
+matrizA <- qui2$residuals/sqrt(n)
+matrizA
+
+```
+
+## Definição da matriz W
+```{r}
+matrizW <- t(matrizA) %*% matrizA
+matrizW
+```
+## Definição da quantidade de dimensões
+```{r}
+qtde_dimensoes <- min(nrow(matrizW) - 1, ncol(matrizW) - 1)
+qtde_dimensoes
+
+
+```
+
+## Definição dos valores singulares
+
+```{r}
+VS_AV <- svd(matrizA, nu = qtde_dimensoes, nv = qtde_dimensoes)
+```
+
+## Valores singulares de cada dimensão
+
+```{r}
+valores_singulares <- VS_AV$d[1:qtde_dimensoes]
+valores_singulares
+```
+
+## Autovalores (eigenvalues) de cada dimensão
+
+```{r}
+eigenvalues <- (valores_singulares)^2
+eigenvalues
+```
+
+## Cálculo da inércia principal total (a partir do qui-quadrado)
+
+```{r}
+inercia_total <- as.numeric(qui2$statistic/sum(tabela_contingencia))
+inercia_total
+```
+
+## Cálculo da variância explicada em cada dimensão
+
+```{r}
+variancia_explicada <- eigenvalues / inercia_total
+variancia_explicada
+```
+
+## Cálculo das massas das colunas (column profiles)
+
+```{r}
+soma_colunas <- apply(tabela_contingencia, MARGIN = 1, FUN = sum)
+soma_colunas
+```
+
+## Massas das colunas (column profiles)
+
+```{r}
+massa_colunas <- soma_colunas / n
+massa_colunas
+```
+
+## Cálculo das massas das linhas (row profiles)
+
+```{r}
+soma_linhas <- apply(tabela_contingencia, MARGIN = 2, FUN = sum)
+soma_linhas
+```
+
+## Massas das linhas (row profiles)
+
+```{r}
+massa_linhas <- soma_linhas / n
+massa_linhas
+```
+
+## Autovetores v das dimensões
+
+```{r}
+autovetor_v <-VS_AV$v
+autovetor_v
+```
+
+## Autovetores u das dimensões
+
+```{r}
+autovetor_u <-VS_AV$u
+autovetor_u
+```
+
+# Principais informações:
+```{r}
+
+data.frame(Dimensão = paste("Dimensão", 1:qtde_dimensoes),
+           `Valor Singular` = valores_singulares,
+           `Inércia Principal Parcial eigenvalues` = eigenvalues) %>%
+  mutate(`Percentual da Inércia Principal Total` = (`Inércia.Principal.Parcial.eigenvalues`/inercia_total) * 100,
+         `Percentual da Inércia Principal Total Acumulada` = cumsum(`Percentual da Inércia Principal Total`),
+         Qui2 = qui2$statistic[[1]] * `Percentual da Inércia Principal Total` / n,
+         `Valor Singular` = `Valor.Singular`,
+         `Inércia Principal Parcial eigenvalues` = Inércia.Principal.Parcial.eigenvalues) %>%
+  select(Dimensão, `Valor Singular`, `Inércia Principal Parcial eigenvalues`,
+         Qui2, `Percentual da Inércia Principal Total`,
+         `Percentual da Inércia Principal Total Acumulada`) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE, 
+                font_size = 17)
+
+```
+
+
+# Calculando as coordenadas para plotar as categorias no mapa perceptual
+
+### Variável em linha na tabela de contingência ('Faixa Etária')
+### Coordenadas das abcissas
+
+```{r}
+coord_abcissas_perfil <- sqrt(valores_singulares[1]) * (massa_colunas^-0.5) * autovetor_u[,1]
+coord_abcissas_perfil
+```
+
+### Coordenadas das ordenadas
+
+```{r}
+coord_ordenadas_perfil <- sqrt(valores_singulares[2]) * (massa_colunas^-0.5) * autovetor_u[,2]
+coord_ordenadas_perfil
+```
+
+## Variável em coluna na tabela de contingência ('aplicacao')
+## Coordenadas das abcissas
+
+```{r}
+coord_abcissas_avaliacao <- sqrt(valores_singulares[1]) * (massa_linhas^-0.5) * autovetor_v[,1]
+coord_abcissas_avaliacao
+```
+
+### Coordenadas das ordenadas
+
+```{r}
+coord_ordenadas_avaliacao <- sqrt(valores_singulares[2]) * (massa_linhas^-0.5) * autovetor_v[,2]
+coord_ordenadas_avaliacao
+```
+
+# Mapa perceptual
+
+```{r}
+cbind.data.frame(coord_abcissas_perfil, coord_ordenadas_perfil,
+                 coord_abcissas_avaliacao, coord_ordenadas_avaliacao) %>%
+  rename(dim_1_perfil = 1,
+         dim_2_perfil = 2,
+         dim_1_aplicacao = 3,
+         dim_2_aplicacao = 4) %>%
+  rownames_to_column() %>%
+  setNames(make.names(names(.), unique = TRUE)) %>%
+  mutate(aplicacao = rownames(data.frame(coord_abcissas_avaliacao,
+                                         coord_ordenadas_avaliacao))) %>%
+  rename(perfil = 1,
+         dim_1_perfil = 2,
+         dim_2_perfil = 3,
+         dim_1_aplicacao = 4,
+         dim_2_aplicacao = 5) %>%
+  ggplot() +
+  geom_point(aes(x = dim_1_perfil, y = dim_2_perfil),
+             color = "deeppink1",
+             fill = "deeppink1",
+             shape = 24,
+             size = 4) +
+  geom_text_repel(aes(x = dim_1_perfil, y = dim_2_perfil, label = perfil)) +
+  geom_point(aes(x = dim_1_aplicacao, y = dim_2_aplicacao),
+             color = "turquoise3",
+             fill = "turquoise3",
+             shape = 21,
+             size = 4) +
+  geom_text_repel(aes(x = dim_1_aplicacao, y = dim_2_aplicacao, label = aplicacao)) +
+  geom_vline(aes(xintercept = 0), linetype = "longdash", color = "grey48") +
+  geom_hline(aes(yintercept = 0), linetype = "longdash", color = "grey48") +
+  labs(x = paste("Dimensão 1:", paste0(round(variancia_explicada[1] * 100, 2),"%")),
+       y = paste("Dimensão 2:", paste0(round(variancia_explicada[2] * 100, 2),"%"))) +
+  theme_bw()
+```
+
+# RESULTADO
+
+```{r}
+anacor <- CA(tabela_contingencia, graph = TRUE)
+```
+
+Notamos que há apenas correspondência entre faixa etária com a qualidade "Bom". pessoas com 60 anos ou mais tendem a avaliar positivamente o transporte.
+
